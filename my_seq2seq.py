@@ -917,7 +917,7 @@ def sequence_loss(logits, targets, weights,
     else:
       return cost
 
-
+# TODO: change argument definition and the return losses
 def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, seq2seq, softmax_loss_function=None,
                        per_example_loss=False, name=None):

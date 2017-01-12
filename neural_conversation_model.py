@@ -173,7 +173,8 @@ def train():
     step_time, loss = 0.0, 0.0
     current_step = 0
     previous_losses = []
-    while True:
+    ## TODO: properly use model.step1 and model.step2 here.  
+    for i in range(10000):
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
       # print "Started"
@@ -186,8 +187,8 @@ def train():
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
 
-      _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                   target_weights, bucket_id, False, beam_search)
+      _, step_loss, _ = model.step1(sess, encoder_inputs, decoder_inputs,
+                                    target_weights, bucket_id, False, beam_search)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       loss += step_loss / FLAGS.steps_per_checkpoint
       current_step += 1
@@ -220,6 +221,8 @@ def train():
             eval_ppx = math.exp(eval_loss) if eval_loss < 300 else float('inf')
             print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         sys.stdout.flush()
+    # properly use model.step3 here. the above code may help.
+    for i in range(10000):
 
 def decode():
   with tf.Session() as sess:

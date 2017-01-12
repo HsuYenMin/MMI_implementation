@@ -78,6 +78,7 @@ class Seq2SeqModel(object):
           return tf.nn.sampled_softmax_loss(w_t, b, inputs, labels, num_samples,
                                             self.target_vocab_size)
       softmax_loss_function = sampled_loss
+    # TODO there should be cell1 and cell2
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
@@ -87,7 +88,8 @@ class Seq2SeqModel(object):
       cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
 
     # The seq2seq function: we use embedding for the input and attention.
-    def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
+    # TODO define source2target and target2source
+    def seq2seq_ST(encoder_inputs, decoder_inputs, do_decode):
         if attention:
             print "Attention Model"
             return embedding_attention_seq2seq(
@@ -110,7 +112,8 @@ class Seq2SeqModel(object):
               feed_previous=do_decode,
               beam_search=beam_search,
               beam_size=beam_size )
-
+    # TODO
+    def seq2seq_TS()
 
     # Feeds for inputs.
     self.encoder_inputs = []
@@ -130,6 +133,7 @@ class Seq2SeqModel(object):
                for i in xrange(len(self.decoder_inputs) - 1)]
 
     # Training outputs and losses.
+
     if forward_only:
         if beam_search:
               self.outputs, self.beam_path, self.beam_symbol = decode_model_with_buckets(
@@ -150,14 +154,15 @@ class Seq2SeqModel(object):
                           for output in self.outputs[b]
                       ]
 
-
     else:
-      self.outputs, self.losses = model_with_buckets(
+        # TODO: losses part: change model_with_buckets's arguments and what it returns
+        self.outputs, self.losses = model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets,
           lambda x, y: seq2seq_f(x, y, False),
           softmax_loss_function=softmax_loss_function)
 
+    # TODO: gradient_norms and updates part 
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
@@ -173,7 +178,7 @@ class Seq2SeqModel(object):
             zip(clipped_gradients, params), global_step=self.global_step))
 
     self.saver = tf.train.Saver(tf.all_variables())
-
+  #TODO:  def step_ST, def step_TS, def step_MMI   
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,
            bucket_id, forward_only, beam_search):
     """Run a step of the model feeding the given inputs.
