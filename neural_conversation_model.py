@@ -198,6 +198,7 @@ def train():
     previous_losses = []
     ## TODO: properly use model.step_ST and model.stepTS here.  
     for i in range(50):
+      t1 = time.time()
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
       # print "Started"
@@ -269,11 +270,13 @@ def train():
             print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         '''
         sys.stdout.flush()
+      print("time consumed :", time.time() - t1)
 
 
     # properly use model.step3 here. the above code may help.
     print("Training model MMI.")
     for i in range(50):
+      t1 = time.time()
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
       # print "Started"
@@ -329,6 +332,7 @@ def train():
             print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         sys.stdout.flush()
         '''
+      print("time consumed :", time.time() - t1)
 
 
 def decode():
