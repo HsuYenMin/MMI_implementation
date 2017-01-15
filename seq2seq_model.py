@@ -217,7 +217,7 @@ class Seq2SeqModel(object):
 
     # TODO: gradient_norms and updates part 
     # Gradients and SGD update operation for training the model.
-    params_ST = tf.trainable_variables()
+    params_ST = tf.get_collection(tf.GraphKeys.VARIABLES, scope="embedding_attention_seq2seq_ST")
     if not forward_only:
       self.gradient_norms_ST = []
       self.updates_ST = []
@@ -232,7 +232,7 @@ class Seq2SeqModel(object):
 
     #gradient_norm_TS PART
     
-    params_TS = tf.trainable_variables()
+    params_TS = tf.get_collection(tf.GraphKeys.VARIABLES, scope="embedding_attention_seq2seq_TS")
     if not forward_only:
       self.gradient_norms_TS = []
       self.updates_TS = []
@@ -247,19 +247,18 @@ class Seq2SeqModel(object):
 
     #gradient_norm_MMI PART
     
-    params_MMI = tf.trainable_variables()
     if not forward_only:
       self.gradient_norms_MMI = []
       self.updates_MMI = []
       opt = tf.train.GradientDescentOptimizer(self.learning_rate)
       for b in xrange(len(buckets)):
-        gradients_MMI = tf.gradients(self.losses[2][b], params_MMI)
+        gradients_MMI = tf.gradients(self.losses[2][b], params_ST)
         clipped_gradients_MMI, norm_MMI = tf.clip_by_global_norm(gradients_MMI,
                                                          max_gradient_norm)
         self.gradient_norms_MMI.append(norm_MMI)
         self.updates_MMI.append(opt.apply_gradients(
-            zip(clipped_gradients_MMI, params_MMI), global_step=self.global_step))
-
+            zip(clipped_gradients_MMI, params_ST), global_step=self.global_step))
+        
     self.saver = tf.train.Saver(tf.all_variables())
   # TODO :  def step_ST, def step_TS, def step_MMI
   def step_ST(self, session, encoder_inputs_ST, decoder_inputs_ST, target_weights_ST,

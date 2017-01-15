@@ -37,7 +37,7 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
 tf.app.flags.DEFINE_integer("batch_size", 32,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 512, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("num_layers", 3, "Number of layers in the model.")
+tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 40000, "English vocabulary size.")
 tf.app.flags.DEFINE_string("train_dir", "./train/", "Training directory.")
 tf.app.flags.DEFINE_string("vocab_path", "./train/", "Data directory")
@@ -96,7 +96,7 @@ def read_chat_data(data_path,vocabulary_path, max_size=None):
                 target_ids = [int(x) for x in sentence_to_token_ids(target,vocab)]
                 target_ids.append(EOS_ID)
                 for bucket_id, (source_size, target_size) in enumerate(_buckets):
-                  if len(source_ids) < source_size and len(target_ids) < target_size:
+                  if len(source_ids) < source_size and len(target_ids) < target_size + 1:
                     data_set[bucket_id].append([source_ids, target_ids])
                     break
     return data_set
@@ -167,6 +167,13 @@ def train():
            % FLAGS.max_train_data_size)
     train_set_ST =read_chat_data(data_path_ST,vocab_path, FLAGS.max_train_data_size)
     train_set_TS =read_chat_data(data_path_TS,vocab_path, FLAGS.max_train_data_size)
+    print("------------------------------")
+    for x in train_set_ST:
+        print(len(x))
+    print("------------------------------")
+    for x in train_set_TS:
+        print(len(x))
+    print("------------------------------")
     #dev_set =read_chat_data(dev_data,vocab_path, FLAGS.max_train_data_size)
 
     train_bucket_sizes_ST = [len(train_set_ST[b]) for b in xrange(len(_buckets))]
