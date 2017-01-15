@@ -42,6 +42,7 @@ from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
 import tensorflow as tf
 
+
 try:
   linear = tf.nn.rnn_cell.linear
 except:
@@ -809,6 +810,7 @@ def embedding_attention_seq2seq(encoder_inputs, decoder_inputs, cell,
       state: The state of each decoder cell at the final time-step.
         It is a 2D Tensor of shape [batch_size x cell.state_size].
   """
+   #scopeName = "embedding_attention_seq2seq"
   with variable_scope.variable_scope(scope or "embedding_attention_seq2seq"):
     # Encoder.
     encoder_cell = rnn_cell.EmbeddingWrapper(
@@ -918,9 +920,7 @@ def sequence_loss(logits, targets, weights,
       return cost
 
 # TODO: change argument definition and the return losses
-def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
-                       buckets, seq2seq, softmax_loss_function=None,
-                       per_example_loss=False, name=None):
+def model_with_buckets(encoder_inputs_ST, decoder_inputs_ST,encoder_inputs_TS,decoder_inputs_TS, targets_ST, targets_TS,weights_ST,weights_TS, buckets, seq2seq_ST, seq2seq_TS, softmax_loss_function=None, per_example_loss=False, name=None,MMIparam=0.5):
   """Create a sequence-to-sequence model with support for bucketing.
 
   The seq2seq argument is a function that defines a sequence-to-sequence model,
@@ -953,38 +953,85 @@ def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
     ValueError: If length of encoder_inputsut, targets, or weights is smaller
       than the largest (last) bucket.
   """
-  if len(encoder_inputs) < buckets[-1][0]:
-    raise ValueError("Length of encoder_inputs (%d) must be at least that of la"
-                     "st bucket (%d)." % (len(encoder_inputs), buckets[-1][0]))
-  if len(targets) < buckets[-1][1]:
-    raise ValueError("Length of targets (%d) must be at least that of last"
-                     "bucket (%d)." % (len(targets), buckets[-1][1]))
-  if len(weights) < buckets[-1][1]:
-    raise ValueError("Length of weights (%d) must be at least that of last"
-                     "bucket (%d)." % (len(weights), buckets[-1][1]))
+  if len(encoder_inputs_ST) < buckets[-1][0]:
+    raise ValueError("Length of encoder_inputs_ST (%d) must be at least that of la"
+                     "st bucket (%d)." % (len(encoder_inputs_ST), buckets[-1][0]))
+  if len(targets_ST) < buckets[-1][1]:
+    raise ValueError("Length of targets_ST (%d) must be at least that of last"
+                     "bucket (%d)." % (len(targets_ST), buckets[-1][1]))
+  if len(weights_ST) < buckets[-1][1]:
+    raise ValueError("Length of weights_ST (%d) must be at least that of last"
+                     "bucket (%d)." % (len(weights_ST), buckets[-1][1]))
 
-  all_inputs = encoder_inputs + decoder_inputs + targets + weights
+  if len(encoder_inputs_TS) < buckets[-1][0]:
+    raise ValueError("Length of encoder_inputs_TS (%d) must be at least that of la"
+                     "st bucket (%d)." % (len(encoder_inputs_TS), buckets[-1][0]))
+  if len(targets_TS) < buckets[-1][1]:
+    raise ValueError("Length of targets_TS (%d) must be at least that of last"
+                     "bucket (%d)." % (len(targets_TS), buckets[-1][1]))
+  if len(weights_TS) < buckets[-1][1]:
+    raise ValueError("Length of weights_TS (%d) must be at least that of last"
+                     "bucket (%d)." % (len(weights_TS), buckets[-1][1]))
+  all_inputs = encoder_inputs_ST + decoder_inputs_ST + targets_ST + weights_ST + encoder_inputs_TS + decoder_inputs_TS + targets_TS + weights_TS
+
+  losses_ST = []
+  losses_TS = []
+  losses_MMI = []
+  outputs_ST = []
+  outputs_TS = []
   losses = []
   outputs = []
+
   with ops.op_scope(all_inputs, name, "model_with_buckets"):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
 
-        bucket_outputs, _ = seq2seq(encoder_inputs[:bucket[0]],
-                                    decoder_inputs[:bucket[1]])
+        bucket_outputs_ST, _ = seq2seq_ST(encoder_inputs_ST[:bucket[0]],
+                                       decoder_inputs_ST[:bucket[1]])
 
-        outputs.append(bucket_outputs)
+	bucket_outputs_TS, _ = seq2seq_TS(encoder_inputs_TS[:bucket[0]],
+				       decoder_inputs_TS[:bucket[1]])
+       
+	outputs_ST.append(bucket_outputs_ST)
+	outputs_TS.append(bucket_outputs_TS)
+
         if per_example_loss:
-          losses.append(sequence_loss_by_example(
-              outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
-              softmax_loss_function=softmax_loss_function))
-        else:
-          losses.append(sequence_loss(
-              outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
-              softmax_loss_function=softmax_loss_function))
+          losses_ST.append(sequence_loss_by_example(
+              outputs_ST[-1], targets_ST[:bucket[1]], weights_ST[:bucket[1]],
+              softmax_loss_function=None))
 
+	  losses_TS.append(sequence_loss_by_example(
+	      outputs_TS[-1],targets_TS[:bucket[1]],weights_TS[:bucket[1]],
+	      softmax_loss_function=None))
+
+          losses_MMI.append(sequence_loss_by_example(
+              outputs_ST[-1], targets_ST[:bucket[1]], weights_ST[:bucket[1]],
+              softmax_loss_function=None)*(1- MMIparam)
+                          + sequence_loss(
+	      outputs_TS[-1],targets_TS[:bucket[1]],weights_TS[:bucket[1]],
+	      softmax_loss_function=None)*(MMIparam) )
+
+        else:
+          losses_ST.append(sequence_loss(
+              outputs_ST[-1], targets_ST[:bucket[1]], weights_ST[:bucket[1]],
+              softmax_loss_function=None))
+
+	  losses_TS.append(sequence_loss(
+	      outputs_TS[-1],targets_TS[:bucket[1]],weights_TS[:bucket[1]],
+	      softmax_loss_function=None))
+	  
+          losses_MMI.append(sequence_loss(
+              outputs_ST[-1], targets_ST[:bucket[1]], weights_ST[:bucket[1]],
+              softmax_loss_function=None)*(1- MMIparam)
+                          + sequence_loss(
+	      outputs_TS[-1],targets_TS[:bucket[1]],weights_TS[:bucket[1]],
+	      softmax_loss_function=None)*(MMIparam) )
+ 
+  outputs = [outputs_ST, outputs_TS]
+  losses = [losses_ST, losses_TS, losses_MMI]
   return outputs, losses
+
 
 def decode_model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, seq2seq, softmax_loss_function=None,

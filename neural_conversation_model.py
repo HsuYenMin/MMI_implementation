@@ -34,15 +34,20 @@ tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
                           "Learning rate decays by this much.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
-tf.app.flags.DEFINE_integer("batch_size", 64,
+tf.app.flags.DEFINE_integer("batch_size", 32,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 512, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("num_layers", 3, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 40000, "English vocabulary size.")
-tf.app.flags.DEFINE_string("train_dir", "./tmp/", "Training directory.")
-tf.app.flags.DEFINE_string("vocab_path", "./tmp/", "Data directory")
-tf.app.flags.DEFINE_string("data_path", "./tmp/", "Training directory.")
-tf.app.flags.DEFINE_string("dev_data", "./tmp/", "Data directory")
+tf.app.flags.DEFINE_string("train_dir", "./train/", "Training directory.")
+tf.app.flags.DEFINE_string("vocab_path", "./train/", "Data directory")
+
+
+tf.app.flags.DEFINE_string("data_path_ST", "./mydata/", "Training directory_ST.")
+tf.app.flags.DEFINE_string("data_path_TS","./mydata/","Training directory_TS.")
+
+
+#tf.app.flags.DEFINE_string("dev_data", "./tmp/", "Data directory")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 400,
@@ -57,12 +62,13 @@ tf.app.flags.DEFINE_boolean("attention", False,
                             "Set to True for interactive decoding.")
 tf.app.flags.DEFINE_boolean("self_test", False,
                             "Run a self-test if this is set to True.")
+tf.app.flags.DEFINE_float("MMIweight",0.5,"the parameter of forward and backword models' weight")
 
 FLAGS = tf.app.flags.FLAGS
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-_buckets = [(5, 10), (10, 15), (20, 25), (40, 50)]
+_buckets = [(10, 10), (15, 15), (25, 25), (50, 50)]
 
 
 
@@ -100,7 +106,7 @@ def create_model(session, forward_only, beam_search, beam_size = 10, attention =
   model = Seq2SeqModel(
       FLAGS.en_vocab_size, FLAGS.en_vocab_size, _buckets,
       FLAGS.size, FLAGS.num_layers, FLAGS.max_gradient_norm, FLAGS.batch_size,
-      FLAGS.learning_rate, FLAGS.learning_rate_decay_factor,
+      FLAGS.learning_rate, FLAGS.learning_rate_decay_factor, FLAGS.MMIweight,
       forward_only=forward_only, beam_search=beam_search, beam_size=beam_size, attention=attention)
   print FLAGS.train_dir
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
@@ -137,8 +143,9 @@ def create_models(path, en_vocab_size, session, forward_only, beam_search, beam_
 
 def train():
 
-  data_path =FLAGS.data_path
-  dev_data = FLAGS.dev_data
+  data_path_ST =FLAGS.data_path_ST
+  data_path_TS =FLAGS.data_path_TS
+  #dev_data = FLAGS.dev_data
   vocab_path =FLAGS.vocab_path
   # Beam search is false during training operation and usedat inference .
   beam_search = False
@@ -146,7 +153,8 @@ def train():
   attention = FLAGS.attention
 
   normalize_digits=True
-  create_vocabulary(vocab_path, data_path, FLAGS.en_vocab_size )
+  create_vocabulary(vocab_path, data_path_ST, FLAGS.en_vocab_size )
+  create_vocabulary(vocab_path, data_path_TS, FLAGS.en_vocab_size )
 
 
   with tf.Session() as sess:
@@ -157,24 +165,32 @@ def train():
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
            % FLAGS.max_train_data_size)
-    train_set =read_chat_data(data_path,vocab_path, FLAGS.max_train_data_size)
-    dev_set =read_chat_data(dev_data,vocab_path, FLAGS.max_train_data_size)
+    train_set_ST =read_chat_data(data_path_ST,vocab_path, FLAGS.max_train_data_size)
+    train_set_TS =read_chat_data(data_path_TS,vocab_path, FLAGS.max_train_data_size)
+    #dev_set =read_chat_data(dev_data,vocab_path, FLAGS.max_train_data_size)
 
-    train_bucket_sizes = [len(train_set[b]) for b in xrange(len(_buckets))]
-    train_total_size = float(sum(train_bucket_sizes))
+    train_bucket_sizes_ST = [len(train_set_ST[b]) for b in xrange(len(_buckets))]
+    train_total_size_ST = float(sum(train_bucket_sizes_ST))
+
+    train_bucket_sizes_TS = [len(train_set_TS[b]) for b in xrange(len(_buckets))]
+    train_total_size_TS = float(sum(train_bucket_sizes_TS))
 
     # A bucket scale is a list of increasing numbers from 0 to 1 that we'll use
     # to select a bucket. Length of [scale[i], scale[i+1]] is proportional to
     # the size if i-th training bucket, as used later.
-    train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
-                           for i in xrange(len(train_bucket_sizes))]
+    train_buckets_scale = max([sum(train_bucket_sizes_ST[:i + 1]) / train_total_size_ST
+                           for i in xrange(len(train_bucket_sizes_ST))],
+                           [sum(train_bucket_sizes_TS[:i + 1]) / train_total_size_TS
+                           for i in xrange(len(train_bucket_sizes_TS))])
+
+
 
     # This is the training loop.
-    step_time, loss = 0.0, 0.0
+    step_time, loss_ST, loss_TS , loss_MMI = 0.0, 0.0, 0.0, 0.0
     current_step = 0
     previous_losses = []
-    ## TODO: properly use model.step1 and model.step2 here.  
-    for i in range(10000):
+    ## TODO: properly use model.step_ST and model.stepTS here.  
+    for i in range(50):
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
       # print "Started"
@@ -184,45 +200,129 @@ def train():
 
       # Get a batch and make a step.
       start_time = time.time()
-      encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-          train_set, bucket_id)
+      encoder_inputs_ST, decoder_inputs_ST, target_weights_ST = model.get_batch(
+          train_set_ST, bucket_id)
 
-      _, step_loss, _ = model.step1(sess, encoder_inputs, decoder_inputs,
-                                    target_weights, bucket_id, False, beam_search)
+      encoder_inputs_TS, decoder_inputs_TS, target_weights_TS = model.get_batch(
+          train_set_TS, bucket_id)
+
+      _, step_loss_ST, _ = model.step_ST(sess, encoder_inputs_ST, decoder_inputs_ST,
+                                    target_weights_ST, bucket_id, False, beam_search)
+
+      _, step_loss_TS, _ = model.step_TS(sess, encoder_inputs_TS, decoder_inputs_TS,
+                                    target_weights_TS, bucket_id, False, beam_search)
+
+
+
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
-      loss += step_loss / FLAGS.steps_per_checkpoint
+      loss_ST += step_loss_ST / FLAGS.steps_per_checkpoint
+      loss_TS += step_loss_TS / FLAGS.steps_per_checkpoint
       current_step += 1
+
+      perplexity_ST = math.exp(loss_ST) if loss_ST < 300 else float('inf')
+      perplexity_TS = math.exp(loss_TS) if loss_TS < 300 else float('inf')
+      print ("global step %d learning rate %.4f step-time %.2f perplexity_ST %.2f perplexity_TS "
+                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(), step_time, perplexity_ST, perplexity_TS))
 
       # Once in a while, we save checkpoint, print statistics, and run evals.
       if current_step % FLAGS.steps_per_checkpoint == 0:
         # Print statistics for the previous epoch.
         print "Running epochs"
-        perplexity = math.exp(loss) if loss < 300 else float('inf')
-        print ("global step %d learning rate %.4f step-time %.2f perplexity "
+        perplexity_ST = math.exp(loss_ST) if loss_ST < 300 else float('inf')
+        perplexity_TS = math.exp(loss_TS) if loss_TS < 300 else float('inf')
+        print ("global step %d learning rate %.4f step-time %.2f perplexity_ST %.2f perplexity_TS "
                 "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
-                          step_time, perplexity))
+                          step_time, perplexity_ST, perplexity_TS))
         # # Decrease learning rate if no improvement was seen over last 3 times.
-        if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
+        if len(previous_losses) > 2 and max(loss_ST,loss_TS) > max(previous_losses[-3:]):
            sess.run(model.learning_rate_decay_op)
-        previous_losses.append(loss)
+        previous_losses.append(max(loss_ST,loss_TS))
         # # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.train_dir, "chat_bot.ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
-        step_time, loss = 0.0, 0.0
+        step_time, loss_ST,loss_TS = 0.0, 0.0, 0.0
         # # Run evals on development set and print their perplexity.
+        '''
+        for bucket_id in xrange(len(_buckets)):
+            if len(dev_set[bucket_id]) == 0:
+              print("  eval: empty bucket %d" % (bucket_id))
+              continue
+            encoder_inputs_ST, decoder_inputs_ST, target_weights_ST = model.get_batch(
+                train_set_TS, bucket_id)
+
+            encoder_inputs_TS, decoder_inputs_TS, target_weights_TS = model.get_batch(
+                train_set_TS, bucket_id)
+
+            _, eval_loss_ST, _ = model.step_ST(sess, encoder_inputs, decoder_inputs,
+                                         target_weights, bucket_id, True, beam_search)
+
+            _, eval_loss_TS, _ = model.step_TS(sess, encoder_inputs, decoder_inputs,
+                                         target_weights, bucket_id, True, beam_search)
+            eval_ppx = math.exp(max(eval_loss_TS,eval_loss_ST)) if eval_loss < 300 else float('inf')
+            print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
+        '''
+        sys.stdout.flush()
+
+
+    # properly use model.step3 here. the above code may help.
+    print("Training model MMI.")
+    for i in range(50):
+      # Choose a bucket according to data distribution. We pick a random number
+      # in [0, 1] and use the corresponding interval in train_buckets_scale.
+      # print "Started"
+      
+      random_number_02 = np.random.random_sample()
+      bucket_id = min([i for i in xrange(len(train_buckets_scale))
+                       if train_buckets_scale[i] > random_number_02])
+
+      # Get a batch and make a step.
+      start_time = time.time()
+
+      encoder_inputs_ST, decoder_inputs_ST, target_weights_ST,encoder_inputs_TS, decoder_inputs_TS, target_weights_TS = model.get_batch_MMI(train_set_ST, train_set_TS, bucket_id)
+
+      _, step_loss_MMI, _ = model.step_MMI(sess,encoder_inputs_ST, decoder_inputs_ST, target_weights_ST,
+                                                encoder_inputs_TS, decoder_inputs_TS, target_weights_TS,
+                                                bucket_id, False, beam_search)
+
+      step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
+      loss_MMI += step_loss_MMI / FLAGS.steps_per_checkpoint
+      current_step += 1
+
+      perplexity_MMI = math.exp(loss_MMI) if loss_MMI < 300 else float('inf')
+      print ("global step %d learning rate %.4f step-time %.2f perplexity_MMI"
+                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
+                          step_time, perplexity_MMI))
+      # Once in a while, we save checkpoint, print statistics, and run evals.
+      if current_step % FLAGS.steps_per_checkpoint == 0:
+        # Print statistics for the previous epoch.
+        print "Running epochs"
+        perplexity_MMI = math.exp(loss_MMI) if loss_MMI < 300 else float('inf')
+        print ("global step %d learning rate %.4f step-time %.2f perplexity_MMI"
+                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
+                          step_time, perplexity_MMI))
+        # # Decrease learning rate if no improvement was seen over last 3 times.
+        if len(previous_losses) > 2 and loss_MMI > max(previous_losses[-3:]):
+           sess.run(model.learning_rate_decay_op)
+        previous_losses.append(loss_MMI)
+        # # Save checkpoint and zero timer and loss.
+        checkpoint_path = os.path.join(FLAGS.train_dir, "chat_bot.ckpt")
+        model.saver.save(sess, checkpoint_path, global_step=model.global_step)
+        step_time, loss_MMI = 0.0, 0.0
+        # # Run evals on development set and print their perplexity.
+        '''
         for bucket_id in xrange(len(_buckets)):
             if len(dev_set[bucket_id]) == 0:
               print("  eval: empty bucket %d" % (bucket_id))
               continue
             encoder_inputs, decoder_inputs, target_weights = model.get_batch(
                 dev_set, bucket_id)
-            _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+            _, eval_loss__MMI, _ = model.step_MMI(sess, encoder_inputs, decoder_inputs,
                                          target_weights, bucket_id, True, beam_search)
-            eval_ppx = math.exp(eval_loss) if eval_loss < 300 else float('inf')
+            eval_ppx = math.exp(eval_loss_MMI) if eval_loss < 300 else float('inf')
             print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
         sys.stdout.flush()
-    # properly use model.step3 here. the above code may help.
-    for i in range(10000):
+        '''
+
 
 def decode():
   with tf.Session() as sess:
